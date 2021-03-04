@@ -1,0 +1,379 @@
+/****************************************************************/
+/*Project:                Escape Room - Combo Box V1 (Prototype)*/
+/*Team:                   47                                    */
+/*Developer(s):           Balaji Kurapati                       */
+/*Date Modified:          03/03/2021                            */
+/*Code Version:           V1.1                                  */
+/****************************************************************/
+
+//Including some libraries to make life easier
+#include <Servo.h>
+#include <LiquidCrystal.h>
+#include "IRremote.h"
+#include "IR.h"           //NOTE: This library was modified for pin 13 instead of pin 11
+
+//Variables regarding color lock
+String colorPass = "BGRY";                    //COLOR PASSCODE
+String colorGuess = "";                       //User's entered guess
+int colorPassLength = colorPass.length();     //Length of set passcode
+bool colorCleared = false;                    //Start with colors not cleared (user has not cleared this lock
+
+//Variables regarding IR lock
+String IRPass = "124047";                     //IR PASSCODE
+String IRGuess = "";                          //User's entered guess
+int IRPassLength = IRPass.length();           //Length of set passcode
+bool IRCleared = false;                       //Start with numbers not cleared (user has not cleared this lock
+
+//Variables regarding potentiometer lock
+int potPass;                                  //Potentiometer threshold value (will be set by reading its initial value)
+bool potCleared = false;                      //Start with potentiometer not cleared (user has not cleared this lock
+
+int state = 1;                                //Variable used to switch through multiple screens
+
+int tiltPin = 7;                              //Pin for the tilt switch
+int initialOrient;                            //Variable to hold initial position of tilt switch
+
+IRrecv irrecv(RECEIVER);     // create instance of 'irrecv'
+decode_results results;      // create instance of 'decode_results'
+
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);  //create instance of 'LiquidCrystal'
+
+Servo myServo;  //creat instance of 'Servo'
+
+//Declare the colored button pins (reads high when pushed)
+int bluePin = A1;
+int greenPin = A2;
+int yellowPin = A3;
+int redPin = A4;
+
+//Declare the potentiometer pin
+int potPin = A0;
+
+//Declare the multi-colored RGB LED pins
+int RgbPin = 9;   //Red pin of the RGB LED
+int rGbPin = 10;  //Green pinof the RGB LED
+
+unsigned long start = millis();           //Set the program time as the start variable (needs to be unsigned long cuz it's long)
+
+void setup() {
+  Serial.begin(9600); //Open serial communication with the computer to test as developing
+  
+  lcd.begin(16,2);  //Define lcd dimensions
+
+  //Declaring pinouts of the colored buttons
+  pinMode(bluePin, INPUT);
+  pinMode(greenPin, INPUT);
+  pinMode(yellowPin, INPUT);
+  pinMode(redPin, INPUT);
+
+  pinMode(potPin, INPUT);   //Declaring potentiometer pinout
+
+  pinMode(RgbPin, OUTPUT);  //Declaring pinout of the RGB LED red pin
+  pinMode(rGbPin, OUTPUT);  //Declaring pinout of the RGB LED green pin
+
+  myServo.attach(6);        //Declaring servo port
+
+  irrecv.enableIRIn();      //Initializing IR reciever
+
+  myServo.write(90);        //Set initial servo position
+
+  potPass = analogRead(potPin)+300;   //Set potentiometer threshold based on initial position (+300)
+  if(potPass > 980){                  //If it is over the max (or in thas case, 980), redifne it
+    potPass = (potPass-980)+40;
+  }
+
+  lcd.clear();                                    //Clear the screen for input
+  initialOrient = digitalRead(tiltPin);           //Set initial tilt switch reading
+  while(initialOrient == digitalRead(tiltPin)){   //While the box hasn't been shaken
+    lcd.setCursor(0,0);
+    lcd.print("   SHAKE ME TO  ");
+    lcd.setCursor(0,1);
+    lcd.print("     WAKE ME    ");
+  }
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("     WELCOME    ");
+  delay(2000);
+
+  //Initial screen of the LCD
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print(" AWAITING INPUT ");
+  lcd.setCursor(0,1);
+  lcd.print("   0/3 CLEARED  ");
+}
+
+void loop() {
+  if(colorCleared+IRCleared+potCleared == 3){ //If all three locks are cleared, open servo and let the user know they unlocked it
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("!!BOX UNLOCKED!!");
+    lcd.setCursor(0,1);
+    lcd.print("!!!!!!!!!!!!!!!!");
+    myServo.write(0);
+    while(true){                  //Until the end of days (or until reset) display this radtastic randomized animation
+      randomSeed(analogRead(A5));
+      int randomNumber = random(4);
+      delay(100);
+      switch(randomNumber){
+        case 0:
+          digitalWrite(A1, HIGH);
+          delay(100);
+          digitalWrite(A1, LOW);
+          break;
+        case 1:
+          digitalWrite(A2, HIGH);
+          delay(100);
+          digitalWrite(A2, LOW);
+          break;
+        case 2:
+          digitalWrite(A3, HIGH);
+          delay(100);
+          digitalWrite(A3, LOW);
+          break;
+        case 3:
+          digitalWrite(A4, HIGH);
+          delay(100);
+          digitalWrite(A4, LOW);
+          break;
+      }
+    }
+  }
+  else if((millis()-start)>2000){             //Otherwise, check if it has been 2 seconds so you can switch screens
+    start = millis();                         //If it has been 2 seconds, reset the start timer
+    state++;                                  //Switch to the next state
+    if(state>4){                              //Go back to state 1 if needed
+      state = 1;
+    }
+    lcd.clear();                              //Setup initial layout of screen
+    lcd.setCursor(0,0);
+    lcd.print(" AWAITING INPUT ");
+    lcd.setCursor(0,1);
+    switch(state){
+      case 1:                                 //Print general lock status
+        lcd.print("  ");
+        lcd.print(colorCleared+IRCleared+potCleared);
+        lcd.print("/3 CLEARED   ");
+        break;
+      case 2:                                //Print color lock status
+        if(colorCleared == false){
+          lcd.print("-Missing Colors-");
+        }
+        else{
+          lcd.print("Colors Cleared! ");
+        }
+        break;
+      case 3:                               //Print IR lock status (number lock)
+        if(IRCleared == false){
+          lcd.print("Missing Numbers-");
+        }
+        else{
+          lcd.print("Numbers Cleared!");
+        }
+        break;
+      case 4:                               //Print dial lock status
+        if(potCleared == false){
+          lcd.print("--Missing Dial--");
+        }
+        else{
+          lcd.print("Dial Cleared!   ");
+        }
+        break;
+    }
+  }
+
+  //Check if the color lock has been cleared
+  //If not, and a color was pressed, go to the colorMode function
+  if(colorCleared == false){
+    if(digitalRead(bluePin)+digitalRead(greenPin)+digitalRead(yellowPin)+digitalRead(redPin)>0){
+      colorGuess = "";
+      colorMode();
+    }
+  }
+  
+  //Check if the number lock has been cleared
+  //If not, and a number was pressed, go to the IRMode function
+  if(IRCleared == false){
+    if(irrecv.decode(&results)){    //Checking if an IR button was pressed
+      IRGuess = "";
+      IRMode();
+      delay(100);
+    }
+  }
+
+  //If the potentiometer ever reaches its threshold value, unlock the dial lock
+  if(analogRead(potPin) == potPass){
+      potCleared = true;
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print(" !DIAL CLEARED! ");
+      alert(1);
+      lcd.clear();
+  }
+}
+
+
+
+//This colorMode function runs for at least 10 seconds and records color presses
+void colorMode(){
+  //Get the screen ready
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("  COLOR CODE:   ");
+
+  unsigned long startT = millis();       //Start the timer. If no buttons are pressed for 10 seconds, (insert "Aight, imma head out" meme here)
+  while((millis()-startT)<10000){        //As long a it hasn't been 10 second since we did something, we're gonna loop again
+    //If a button has been pressed,
+    if(digitalRead(bluePin)+digitalRead(greenPin)+digitalRead(yellowPin)+digitalRead(redPin)>0){
+      if(digitalRead(bluePin)){               //If the blue button was pressed,
+        colorGuess += "B";                    //Concatenate (or append) the letter "B" to the user's colorGuess
+        while(digitalRead(bluePin)){}         //Wait for button to be unpressed
+      }
+      else if(digitalRead(greenPin)){         //If the green button was pressed,
+        colorGuess += "G";                    //Concatenate (or append) the letter "G" to the user's colorGuess
+        while(digitalRead(greenPin)){}        //Wait for button to be unpressed
+      }
+      else if(digitalRead(yellowPin)){        //If the yellow button was pressed,
+        colorGuess += "Y";                    //Concatenate (or append) the letter "Y" to the user's colorGuess
+        while(digitalRead(yellowPin)){}       //Wait for button to be unpressed
+      }
+      else if(digitalRead(redPin)){           //If the red button was pressed,
+        colorGuess += "R";                    //Concatenate (or append) the letter "R" to the user's colorGuess
+        while(digitalRead(redPin)){}          //Wait for button to be unpressed
+      }
+
+      startT = millis();                      //Since something happened, we can reset our timer
+      
+      //Clear the screen and display the user's current input
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("  COLOR CODE:   ");
+      lcd.setCursor(0,1);
+      lcd.print(colorGuess);
+    }
+
+    //If the user's guess length matches that of our passcode,
+    if (colorGuess.length() == colorPassLength){
+      if (colorGuess == colorPass){           //Check to see if it's the same
+        colorCleared = true;                  //Let the system know that the user cleared the color lock
+        //Let the user know they did a good job
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("  COLOR CODE:   ");
+        lcd.setCursor(0,1);
+        lcd.print("    !CORRECT!   ");
+        alert(1);                             //Call the alert function with a 1 for a green flash
+      }
+      else{                                   //HAHA they got it wrong
+        colorGuess = "";                      //Clear their guess so they can try again
+        colorCleared = false;                 //Let the system know that the user still doesn't know what they're doing
+        //Let the user know they suck
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("  COLOR CODE:   ");
+        lcd.setCursor(0,1);
+        lcd.print("    INCORRECT   ");
+        alert(0);                             //Call the alert function with a 0 for a red flash
+      }
+      break;
+    }
+  }
+}
+
+
+//This IRMode function runs for at least 10 seconds and records IR remote presses
+void IRMode(){
+  //Get the screen ready
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("  NUMBER CODE:  ");
+  unsigned long startT = millis();            //Start dat timer again
+  while((millis()-startT)<10000){             //Make sure we haven't been chillin here for more than 10 seconds
+    int rawHex;                               //This variable will hold the raw hexidecimal value from the IR remote
+    String currentPress = "X";                //Default the current character to X
+    if(irrecv.decode(&results)){              //If we can pick up a signal...
+      rawHex = results.value;                 //Set the rawHex equal to the value we just saw from the remote
+      getPress(&rawHex, &currentPress);       //Send some pointers (how fun) and decode the hexadecimal we got into a number character
+      irrecv.resume();                        //Let the system know they can be on the lookout for a new blinky light
+    }
+    
+    if(currentPress != "X"){                  //As long as we recorded SOMETHING
+      startT = millis();                       //Reset the timer, cuz ya know, we're busy doing important stuff
+      IRGuess += currentPress;                //Add that new press that we just got onto the back of the user's IRGuess
+      
+      //Setup the screen and writout their current guess
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("  NUMBER CODE:  ");
+      lcd.setCursor(0,1);
+      lcd.print(IRGuess);
+    }
+
+    //If the user's guess length matches that of our passcode
+    if(IRGuess.length() == IRPassLength){
+      if(IRGuess == IRPass){                  //Check if they're right
+        IRCleared = true;                     //Let the system know the user cleared the number lock
+        //Let the user know they're so cool and need a pat on the back
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("  NUMBER CODE:  ");
+        lcd.setCursor(0,1);
+        lcd.print("    !CORRECT!   ");
+        alert(1);                             //Call the alert function with a 1 to flash a super rad green light
+      }
+      else{                                   //AHAHAHAHAHA they messed up, they goofed, they pressed the wrong thing, they need some milk
+        IRCleared = false;                    //Let the system know that it is frickin foolproof
+        IRGuess = "";                         //Clear the user's guess cuz they probably want a second (or third or fourth) try
+        //Let the user know that they ain't good enough
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("  NUMBER CODE:  ");
+        lcd.setCursor(0,1);
+        lcd.print("    INCORRECT   ");
+        alert(0);                             //Call the alert function with a 0 so we can boo them with a red flashy light
+      }
+      break;
+    }
+  }
+}
+
+
+//This fun function takes the pointer to a hexadecimal and the pointer to a string
+//It will convert the hexidecimal into the appropriate remote key press (using an array)
+//It will then place the character into the second pointer
+void getPress(int *rawHex, String *currentPress){
+  int i;
+  int hexArray[10] = {0xFF6897, 0xFF30CF, 0xFF18E7, 0xFF7A85, 0xFF10EF, 0xFF38C7, 0xFF5AA5, 0xFF42BD, 0xFF4AB5, 0xFF52AD};    //Index 0 is 0, index 1 is 1, etc.
+
+  //Loop through the array and see if the given hexadecimal matches any of our numbers
+  for(i=0; i<10; i++){
+    if(hexArray[i] == *rawHex){
+      *currentPress = String(i);    //If it does, convert the number's index (which is the same as the number) into a string and store it into the currentPress variable
+    }
+  }
+   
+}
+
+
+//This radtastic function holds a light party depending on the circumstance
+//If it recieves a 1, then someone unlocked something and we gonna flash the green light
+//If it recieves a 0, then someone got bamboozled and we gotta give em some red
+void alert(int yay){
+  int i;
+  if(yay == 1){                     //They did a good job!!
+    for(i=0; i<5; i++){
+      digitalWrite(rGbPin, HIGH);
+      delay(200);
+      digitalWrite(rGbPin, LOW);
+      delay(200);
+    }
+  }
+  else if(yay == 0){                //They didn't do a good job!!
+    for(i=0; i<5; i++){
+      digitalWrite(RgbPin, HIGH);
+      delay(200);
+      digitalWrite(RgbPin, LOW);
+      delay(200);
+    }
+  }
+}
