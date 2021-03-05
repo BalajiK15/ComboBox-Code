@@ -202,7 +202,7 @@ void loop() {
   }
 
   //If the potentiometer ever reaches its threshold value, unlock the dial lock
-  if(analogRead(potPin) == potPass){
+  if((analogRead(potPin) == potPass) && (potCleared == false)){
       potCleared = true;
       lcd.clear();
       lcd.setCursor(0,0);
